@@ -110,7 +110,7 @@ When launching Unity Activity with Intent extras:
 
 **Android Side:**
 ```kotlin
-val intent = Intent(this, UnityPlayerActivity::class.java)
+val intent = Intent(this, UnityPlayerGameActivity::class.java)
 intent.putExtra("MAP_CODE", "MAP_ABC123")
 startActivityForResult(intent, UNITY_REQUEST_CODE)
 ```
@@ -263,25 +263,99 @@ UnityExport/unityLibrary/build/outputs/aar/unityLibrary-release.aar
 
 ## Android Integration with Kotlin
 
-### Step 1: Add AAR to Your Android Project
+### Step 1: Add AAR Files to Your Android Project
 
 1. Create `libs` folder in your app module:
    ```
    YourAndroidApp/
    └── app/
        ├── libs/
-       │   └── unityLibrary-release.aar
-       └── build.gradle
+       │   ├── unityLibrary-debug.aar          (or unityLibrary-release.aar)
+       │   ├── xrmanifest.androidlib-release.aar
+       │   ├── arcore_client.aar
+       │   ├── UnityARCore.aar
+       │   ├── ARPresto.aar
+       │   └── unityandroidpermissions.aar
+       └── build.gradle.kts
    ```
 
-2. Copy `unityLibrary-release.aar` to `app/libs/`
+2. Copy all AAR files from the Unity export to `app/libs/`:
+   - **unityLibrary-debug.aar** (or release): Main Unity library
+   - **xrmanifest.androidlib-release.aar**: XR manifest support
+   - **arcore_client.aar**: ARCore client library
+   - **UnityARCore.aar**: Unity ARCore integration
+   - **ARPresto.aar**: AR Presto library
+   - **unityandroidpermissions.aar**: Unity Android permissions handler
 
-### Step 2: Update app/build.gradle
+### Step 2: Update app/build.gradle.kts
 
-```gradle
+```kotlin
+import org.gradle.kotlin.dsl.implementation
+
+plugins {
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.android)
+}
+
+android {
+    namespace = "com.yourcompany.mainapp"
+    compileSdk = 36
+
+    defaultConfig {
+        applicationId = "com.yourcompany.mainapp"
+        minSdk = 28
+        targetSdk = 36
+        versionCode = 1
+        versionName = "1.0"
+
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = false
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+        }
+    }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_11
+        targetCompatibility = JavaVersion.VERSION_11
+    }
+    kotlinOptions {
+        jvmTarget = "11"
+    }
+}
+
 dependencies {
-    // Unity Library
-    implementation files('libs/unityLibrary-release.aar')
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.appcompat)
+    implementation(libs.material)
+    implementation(libs.androidx.activity)
+    implementation(libs.androidx.constraintlayout)
+    testImplementation(libs.junit)
+    androidTestImplementation(libs.androidx.junit)
+    androidTestImplementation(libs.androidx.espresso.core)
+
+    // Unity Library (main)
+    implementation(files("libs/unityLibrary-debug.aar"))
+    // OR for release: implementation(files("libs/unityLibrary-release.aar"))
+
+    // XR Manifest support
+    implementation(files("libs/xrmanifest.androidlib-release.aar"))
+
+    // ARCore dependencies
+    implementation(files("libs/arcore_client.aar"))
+    implementation(files("libs/UnityARCore.aar"))
+    implementation(files("libs/ARPresto.aar"))
+
+    // Unity Android Permissions
+    implementation(files("libs/unityandroidpermissions.aar"))
+
+    // Required: Games Activity for UnityPlayerGameActivity
+    implementation("androidx.games:games-activity:3.0.5")
 }
 ```
 
@@ -325,16 +399,18 @@ Add Unity activity and required permissions:
 
     <application
         android:allowBackup="true"
-        android:hardwareAccelerated="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
         android:theme="@style/Theme.YourApp">
 
         <!-- Main Activity -->
         <activity
             android:name=".MainActivity"
-            android:exported="true"
-            android:launchMode="singleTop">
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -366,15 +442,17 @@ Add Unity activity and required permissions:
 ```kotlin
 package com.yourcompany.mainapp
 
-import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
 import android.widget.Button
 import android.widget.EditText
 import android.widget.Toast
-import com.unity3d.player.UnityPlayerActivity
+import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import com.unity3d.player.UnityPlayerGameActivity
 
-class MainActivity : Activity() {
+class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val UNITY_REQUEST_CODE = 1001
@@ -385,6 +463,13 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+
+        // Handle window insets for edge-to-edge display
+        ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main)) { v, insets ->
+            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom)
+            insets
+        }
 
         mapCodeInput = findViewById(R.id.mapCodeInput)
         val openNavigationButton = findViewById<Button>(R.id.openNavigationButton)
@@ -406,8 +491,8 @@ class MainActivity : Activity() {
             return
         }
 
-        // Create intent to launch Unity
-        val intent = Intent(this, UnityPlayerActivity::class.java).apply {
+        // Create intent to launch Unity using UnityPlayerGameActivity
+        val intent = Intent(this, UnityPlayerGameActivity::class.java).apply {
             // Pass MapCode to Unity via Intent extras
             // UnityAndroidBridge will automatically read this
             putExtra("MAP_CODE", mapCode)
@@ -449,13 +534,6 @@ class MainActivity : Activity() {
      * Implement your business logic here.
      */
     private fun handleUnityResult(resultData: String?, message: String?) {
-        // Process the data as needed
-        // Examples:
-        // - Update UI
-        // - Save to database
-        // - Trigger analytics
-        // - Navigate to another screen
-
         println("Unity Result - Data: $resultData, Message: $message")
 
         // Example: Update the input field with returned data
@@ -466,11 +544,14 @@ class MainActivity : Activity() {
 }
 ```
 
+> **Note**: This uses `UnityPlayerGameActivity` instead of the deprecated `UnityPlayerActivity`. The `UnityPlayerGameActivity` is the modern approach for Unity 2021.2+ and requires the `androidx.games:games-activity` dependency.
+
 ### Step 3: Create Layout (res/layout/activity_main.xml)
 
 ```xml
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/main"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
@@ -605,7 +686,7 @@ class MainActivity : Activity() {
     }
 
     private fun launchUnityWithMapCode(mapCode: String) {
-        val intent = Intent(this, UnityPlayerActivity::class.java).apply {
+        val intent = Intent(this, UnityPlayerGameActivity::class.java).apply {
             putExtra("MAP_CODE", mapCode)
         }
         startActivityForResult(intent, UNITY_REQUEST_CODE)
@@ -678,11 +759,18 @@ class MainActivity : Activity() {
 - Add required permissions (INTERNET, CAMERA)
 - Add required features (OpenGL ES, touchscreen)
 
-#### 2. **build.gradle**
-- Add Unity AAR dependency: `implementation files('libs/unityLibrary-release.aar')`
+#### 2. **build.gradle.kts**
+- Add all Unity AAR dependencies:
+  - `implementation(files("libs/unityLibrary-debug.aar"))` (or release)
+  - `implementation(files("libs/xrmanifest.androidlib-release.aar"))`
+  - `implementation(files("libs/arcore_client.aar"))`
+  - `implementation(files("libs/UnityARCore.aar"))`
+  - `implementation(files("libs/ARPresto.aar"))`
+  - `implementation(files("libs/unityandroidpermissions.aar"))`
+- Add games-activity dependency: `implementation("androidx.games:games-activity:3.0.5")`
 
 #### 3. **MainActivity.kt**
-- Create Intent to launch `UnityPlayerActivity`
+- Create Intent to launch `UnityPlayerGameActivity`
 - Pass MapCode via `intent.putExtra("MAP_CODE", mapCode)`
 - Use `startActivityForResult()` to expect data back
 - Override `onActivityResult()` to receive returned data
@@ -705,7 +793,7 @@ class MainActivity : Activity() {
 ### Android → Unity (Automatic)
 ```kotlin
 // In Android Kotlin
-val intent = Intent(this, UnityPlayerActivity::class.java)
+val intent = Intent(this, UnityPlayerGameActivity::class.java)
 intent.putExtra("MAP_CODE", "YOUR_MAP_CODE")  // ← Android sends
 startActivityForResult(intent, REQUEST_CODE)
 ```
@@ -748,7 +836,7 @@ override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) 
 │                         ANDROID KOTLIN                          │
 │                                                                 │
 │  MainActivity.kt:                                               │
-│  val intent = Intent(this, UnityPlayerActivity::class.java)    │
+│  val intent = Intent(this, UnityPlayerGameActivity::class.java)│
 │  intent.putExtra("MAP_CODE", "MAP_ABC123")                     │
 │  startActivityForResult(intent, 1001)                          │
 │                                                                 │
@@ -808,12 +896,18 @@ override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) 
 ## Quick Start Checklist
 
 - [ ] Export Unity project with "Export Project" enabled
-- [ ] Build `unityLibrary-release.aar` using Gradle
-- [ ] Copy AAR to Android project's `app/libs/` folder
-- [ ] Update `build.gradle` with AAR dependency
-- [ ] Add Unity activity to `AndroidManifest.xml`
+- [ ] Build `unityLibrary-debug.aar` (or release) using Gradle
+- [ ] Copy all AAR files to Android project's `app/libs/` folder:
+  - [ ] `unityLibrary-debug.aar` (or release)
+  - [ ] `xrmanifest.androidlib-release.aar`
+  - [ ] `arcore_client.aar`
+  - [ ] `UnityARCore.aar`
+  - [ ] `ARPresto.aar`
+  - [ ] `unityandroidpermissions.aar`
+- [ ] Update `build.gradle.kts` with all AAR dependencies and games-activity
+- [ ] Add Unity activity (`UnityPlayerGameActivity`) to `AndroidManifest.xml`
 - [ ] Add required permissions and features to manifest
-- [ ] Create `MainActivity.kt` with Intent launch code
+- [ ] Create `MainActivity.kt` extending `AppCompatActivity` with Intent launch code
 - [ ] Implement `onActivityResult()` to receive data
 - [ ] Create layout XML with MapCode input and button
 - [ ] Build and run Android app
@@ -829,6 +923,9 @@ override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) 
 - **UnitySendMessage** can be used for runtime updates
 - **Back button** automatically triggers data return
 - **Result Intent** contains `RESULT_DATA` and `MESSAGE` keys
+- **UnityPlayerGameActivity** is the modern Activity class (Unity 2021.2+), replacing deprecated `UnityPlayerActivity`
+- **games-activity dependency** is required for `UnityPlayerGameActivity` to work
+- **Multiple AAR files** are needed for AR functionality - don't forget the ARCore-related AARs
 
 ---
 
